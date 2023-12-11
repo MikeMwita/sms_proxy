@@ -18,8 +18,9 @@ type Message = string
 type MessageID = string
 
 type SendingResult struct {
-	ID  MessageID
-	Err error
+	ID        MessageID
+	Err       error
+	MessageID MessageID
 }
 
 type ValidationError struct {

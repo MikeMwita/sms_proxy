@@ -35,6 +35,65 @@ type simpleBatchingClient struct {
 }
 
 func (b *simpleBatchingClient) send(message SendMessage, ID MessageID) error {
+	b.lock.Lock()
+	defer b.lock.Unlock()
+
+	// Save the new message in the repository with the ACCEPTED status
+	if err := b.repository.save(ID); err != nil {
+		return err
+	}
+
+	// Convert the SendMessage to FastSmsing Message
+	fastMessage := fastsmsing.Message{
+		PhoneNumber: message.PhoneNumber, // Replace with the actual field from your SendMessage struct
+		Message:     message.Message,     // Replace with the actual field from your SendMessage struct
+		MessageID:   ID,                  // Replace with the actual field from your MessageID struct
+	}
+
+	// Add the message to the list of messages to be sent
+	b.messagesToSend = append(b.messagesToSend, fastMessage)
+
+	// Check if the batch size is reached
+	if len(b.messagesToSend) >= b.config.minimumInBatch {
+		// Send the batch of messages
+		err := b.sendBatch()
+		if err != nil {
+			// If sending fails, gather statistics and reset the messages to send
+			sendStatistics(b.messagesToSend, err, 1, calculateMaxAttempts(b.config.maxAttempts), b.statistics)
+			b.messagesToSend = nil
+			return err
+		}
+
+		// If sending is successful, gather statistics and reset the messages to send
+		sendStatistics(b.messagesToSend, nil, 1, calculateMaxAttempts(b.config.maxAttempts), b.statistics)
+		b.messagesToSend = nil
+	}
+
+	return nil
+}
+
+// If sending is successful, gather statistics and reset the messages to send
+//sendStatistics(b.messagesToSend, nil, 1, calculateMaxAttempts(b.config.maxAttempts), b.statistics)
+//b.messagesToSend = nil
+//}
+
+//return nil
+//}
+
+func (b *simpleBatchingClient) sendBatch() error {
+	// Retry sending the batch according to maxAttempts
+	for attempt := 1; attempt <= calculateMaxAttempts(b.config.maxAttempts); attempt++ {
+		err := b.client.Send(b.messagesToSend)
+		if err == nil {
+			return nil // Successfully sent the batch
+		}
+
+		// If sending fails, check if it's the last attempt and return the error
+		if lastAttemptFailed(attempt, calculateMaxAttempts(b.config.maxAttempts), err) {
+			return err
+		}
+	}
+
 	return nil
 }
 
