@@ -42,10 +42,16 @@ func (c *inMemoryClient) markAsDelivered(messages []Message) {
 }
 
 func (c *inMemoryClient) Subscribe(subscriber chan map[MessageID]MessageStatus) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
 	c.subscribers = append(c.subscribers, subscriber)
 }
 
 func (c *inMemoryClient) Stop() {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
 	for _, subscriber := range c.subscribers {
 		close(subscriber)
 	}

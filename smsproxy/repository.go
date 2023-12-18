@@ -1,15 +1,8 @@
 package smsproxy
 
 import (
-	"errors"
+	"fmt"
 	"sync"
-)
-
-const (
-	ACCEPTED  MessageStatus = "ACCEPTED"
-	FAILED    MessageStatus = "FAILED"
-	DELIVERED MessageStatus = "DELIVERED"
-	NOT_FOUND MessageStatus = "NOT_FOUND"
 )
 
 type repository interface {
@@ -24,52 +17,58 @@ type inMemoryRepository struct {
 }
 
 func (r *inMemoryRepository) save(id MessageID) error {
-	// save given MessageID with ACCEPTED status. If given MessageID already exists, return an errorr.lock.Lock()
-	r.lock.Lock()
-	defer r.lock.Unlock()
+	// save given MessageID with ACCEPTED status. If given MessageID already exists, return an error
 
-	// Save given MessageID with ACCEPTED status. If given MessageID already exists, return an error.
-	if _, exists := r.db[id]; exists {
-		return errors.New("message ID already exists")
+	if _, ok := r.db[id]; ok {
+		return fmt.Errorf("message with the given id %s already exist", id)
 	}
 
-	r.db[id] = ACCEPTED
+	r.lock.Lock()
+	defer r.lock.Unlock()
+	r.db[id] = Accepted
 	return nil
 }
 
 func (r *inMemoryRepository) get(id MessageID) (MessageStatus, error) {
 	// return status of given message, by it's MessageID. If not found, return NOT_FOUND status
-	r.lock.RLock()
-	defer r.lock.RUnlock()
+	r.lock.Lock()
+	defer r.lock.Unlock()
 
-	status, exists := r.db[id]
-	if !exists {
-		return NOT_FOUND, nil
+	if val, ok := r.db[id]; ok {
+		return val, nil
 	}
-
-	return status, nil
-
+	return NotFound, nil
 }
 
 func (r *inMemoryRepository) update(id MessageID, newStatus MessageStatus) error {
 	// Set new status for a given message.
 	// If message is not in ACCEPTED state already - return an error.
 	// If current status is FAILED or DELIVERED - don't update it and return an error. Those are final statuses and cannot be overwritten.
-
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	// Set a new status for a given message.
-	// If the message is not in ACCEPTED state already - return an error.
-	// If the current status is FAILED or DELIVERED - don't update it and return an error.
-	// Those are final statuses and cannot be overwritten.
-	currentStatus, exists := r.db[id]
-	if !exists || currentStatus != ACCEPTED {
-		return errors.New("invalid message status for update")
+	val := r.db[id]
+	acceptedIndex := -1
+	valIndex := -1
+	for i := range allStatuses {
+		if allStatuses[i] == Accepted {
+			acceptedIndex = i
+		}
+		if allStatuses[i] == val {
+			valIndex = i
+		}
 	}
 
-	if currentStatus == FAILED || currentStatus == DELIVERED {
-		return errors.New("cannot update final status")
+	if valIndex < 0 {
+		return fmt.Errorf("invalid status")
+	}
+
+	if valIndex < acceptedIndex {
+		return fmt.Errorf("to update the status should be at ACCEPTED")
+	}
+
+	if val == Failed || val == Delivered {
+		return fmt.Errorf("unable to overwrite the status")
 	}
 
 	r.db[id] = newStatus
